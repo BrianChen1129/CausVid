@@ -68,6 +68,7 @@ class ODERegressionLMDBDataset(Dataset):
             self.env,
             "prompts", str, idx
         )
+
         return {
             "prompts": prompts,
             "ode_latent": torch.tensor(latents, dtype=torch.float32)

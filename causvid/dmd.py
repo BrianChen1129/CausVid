@@ -341,8 +341,9 @@ class DMD(nn.Module):
         # Step 2: Randomly sample a timestep and pick the corresponding input
         index = torch.randint(0, len(self.denoising_step_list), [
                               image_or_video_shape[0], image_or_video_shape[1]], device=self.device, dtype=torch.long)
-        index = self._process_timestep(index, type=self.generator_task_type)
 
+        index = self._process_timestep(index, type=self.generator_task_type)
+        
         # select the corresponding timestep's noisy input from the stacked tensor [B, T, F, C, H, W]
         noisy_input = torch.gather(
             simulated_noisy_input, dim=1,
@@ -351,7 +352,7 @@ class DMD(nn.Module):
         ).squeeze(1)
 
         timestep = self.denoising_step_list[index]
-
+        
         pred_image_or_video = self.generator(
             noisy_image_or_video=noisy_input,
             conditional_dict=conditional_dict,
@@ -366,7 +367,7 @@ class DMD(nn.Module):
 
         pred_image_or_video = pred_image_or_video.type_as(noisy_input)
 
-        return pred_image_or_video, gradient_mask
+        return pred_image_or_video, gradient_mask, timestep.float().detach()
 
     def generator_loss(self, image_or_video_shape, conditional_dict: dict, unconditional_dict: dict, clean_latent: torch.Tensor) -> Tuple[torch.Tensor, dict]:
         """
@@ -384,7 +385,7 @@ class DMD(nn.Module):
             - generator_log_dict: a dictionary containing the intermediate tensors for logging.
         """
         # Step 1: Run generator on backward simulated noisy input
-        pred_image, gradient_mask = self._run_generator(
+        pred_image, gradient_mask, timestep_dmd = self._run_generator(
             image_or_video_shape=image_or_video_shape,
             conditional_dict=conditional_dict,
             unconditional_dict=unconditional_dict,
@@ -400,6 +401,7 @@ class DMD(nn.Module):
         )
 
         # Step 3: TODO: Implement the GAN loss
+        dmd_log_dict['dmd_timestep_stu'] = timestep_dmd
 
         return dmd_loss, dmd_log_dict
 
@@ -421,7 +423,7 @@ class DMD(nn.Module):
 
         # Step 1: Run generator on backward simulated noisy input
         with torch.no_grad():
-            generated_image, _ = self._run_generator(
+            generated_image, _, timestep_gen = self._run_generator(
                 image_or_video_shape=image_or_video_shape,
                 conditional_dict=conditional_dict,
                 unconditional_dict=unconditional_dict,
@@ -447,6 +449,7 @@ class DMD(nn.Module):
         critic_timestep = critic_timestep.clamp(self.min_step, self.max_step)
 
         critic_noise = torch.randn_like(generated_image)
+
         noisy_generated_image = self.scheduler.add_noise(
             generated_image.flatten(0, 1),
             critic_noise.flatten(0, 1),
@@ -495,7 +498,8 @@ class DMD(nn.Module):
             "critictrain_latent": generated_image.detach(),
             "critictrain_noisy_latent": noisy_generated_image.detach(),
             "critictrain_pred_image": pred_fake_image.detach(),
-            "critic_timestep": critic_timestep.detach()
+            "critic_timestep": critic_timestep.detach(),
+            "critic_timestep_stu": timestep_gen.float().detach()    
         }
 
         return denoising_loss, critic_log_dict

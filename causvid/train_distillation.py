@@ -17,6 +17,7 @@ import torch
 import wandb
 import time
 import os
+from tqdm import tqdm
 
 
 class Trainer:
@@ -93,14 +94,14 @@ class Trainer:
 
         self.generator_optimizer = torch.optim.AdamW(
             [param for param in self.distillation_model.generator.parameters()
-             if param.requires_grad],
+            if param.requires_grad],
             lr=config.lr,
             betas=(config.beta1, config.beta2)
         )
-
+        from IPython import embed; embed()
         self.critic_optimizer = torch.optim.AdamW(
             [param for param in self.distillation_model.fake_score.parameters()
-             if param.requires_grad],
+            if param.requires_grad],
             lr=config.lr,
             betas=(config.beta1, config.beta2)
         )
@@ -123,6 +124,7 @@ class Trainer:
         self.step = 0
         self.max_grad_norm = 10.0
         self.previous_time = None
+    
 
     def save(self):
         print("Start gathering distributed model states...")
@@ -139,10 +141,12 @@ class Trainer:
             os.makedirs(os.path.join(self.output_path,
                         f"checkpoint_model_{self.step:06d}"), exist_ok=True)
             torch.save(state_dict, os.path.join(self.output_path,
-                       f"checkpoint_model_{self.step:06d}", "model.pt"))
+                    f"checkpoint_model_{self.step:06d}", "model.pt"))
             print("Model saved to", os.path.join(self.output_path,
-                  f"checkpoint_model_{self.step:06d}", "model.pt"))
+                f"checkpoint_model_{self.step:06d}", "model.pt"))
 
+
+    
     def train_one_step(self):
         self.distillation_model.eval()  # prevent any randomness (e.g. dropout)
 
@@ -165,8 +169,8 @@ class Trainer:
         batch_size = len(text_prompts)
         image_or_video_shape = list(self.config.image_or_video_shape)
         image_or_video_shape[0] = batch_size
-
         # Step 2: Extract the conditional infos
+
         with torch.no_grad():
             conditional_dict = self.distillation_model.text_encoder(
                 text_prompts=text_prompts)
@@ -175,7 +179,7 @@ class Trainer:
                 unconditional_dict = self.distillation_model.text_encoder(
                     text_prompts=[self.config.negative_prompt] * batch_size)
                 unconditional_dict = {k: v.detach()
-                                      for k, v in unconditional_dict.items()}
+                                    for k, v in unconditional_dict.items()}
                 self.unconditional_dict = unconditional_dict  # cache the unconditional_dict
             else:
                 unconditional_dict = self.unconditional_dict
@@ -215,7 +219,9 @@ class Trainer:
         if self.is_main_process:
             wandb_loss_dict = {
                 "critic_loss": critic_loss.item(),
-                "critic_grad_norm": critic_grad_norm.item()
+                "critic_grad_norm": critic_grad_norm.item(),
+                "critic_timestep": critic_log_dict["critic_timestep"].mean().item(),
+                "critic_timestep_stu": critic_log_dict["critic_timestep_stu"].mean().item(),
             }
 
             if TRAIN_GENERATOR:
@@ -223,22 +229,28 @@ class Trainer:
                     {
                         "generator_loss": generator_loss.item(),
                         "generator_grad_norm": generator_grad_norm.item(),
-                        "dmdtrain_gradient_norm": generator_log_dict["dmdtrain_gradient_norm"].item()
+                        "dmdtrain_gradient_norm": generator_log_dict["dmdtrain_gradient_norm"].item(),
+                        "generator_timestep": generator_log_dict["timestep"].mean().item(),
+                        "dmd_timestep_stu": generator_log_dict["dmd_timestep_stu"].mean().item(),
                     }
                 )
 
             if VISUALIZE:
+                gpu_memory_usage = torch.cuda.memory_allocated() / 1024**2
+                print("GPU memory usage before validation: %s MB",
+                            gpu_memory_usage)
                 self.add_visualization(generator_log_dict, critic_log_dict, wandb_loss_dict)
 
             wandb.log(wandb_loss_dict, step=self.step)
 
-    def add_visualization(self, generator_log_dict, critic_log_dict, wandb_loss_dict):
+    def add_visualization(self, generator_log_dict, critic_log_dict, wandb_loss_dict):        
         critictrain_latent, critictrain_noisy_latent, critictrain_pred_image = map(
-            lambda x: self.distillation_model.vae.decode_to_pixel(
-                x).squeeze(1),
-            [critic_log_dict['critictrain_latent'], critic_log_dict['critictrain_noisy_latent'],
-                critic_log_dict['critictrain_pred_image']]
+            lambda x: self.distillation_model.vae.decode_to_pixel(x).squeeze(1),
+            [critic_log_dict['critictrain_latent'],
+            critic_log_dict['critictrain_noisy_latent'],
+            critic_log_dict['critictrain_pred_image']]
         )
+
 
         wandb_loss_dict.update({
             "critictrain_latent": prepare_for_saving(critictrain_latent),
@@ -263,9 +275,67 @@ class Trainer:
                 }
             )
 
+    # def validation(self) -> torch.Tensor:
+    #     """
+    #     Validation function to evaluate the model performance.
+    #     This function is currently a placeholder and does not perform any validation.
+    #     """
+    #     self.distillation_model.eval()
+    #     text_prompts = ["Will Smith casually eats noodles, his relaxed demeanor contrasting with the energetic background of a bustling street food market. The scene captures a mix of humor and authenticity. Mid-shot framing, vibrant lighting."]
+    #     conditional_dict = self.distillation_model.text_encoder(
+    #         text_prompts=text_prompts
+    #     )
+    #     device = self.device
+    #     noise=torch.randn(
+    #         1, 21, 16, 60, 104, generator=torch.Generator(device=device).manual_seed(42),
+    #         dtype=torch.bfloat16, device=device
+    #     )
+    #     # initial point
+    #     noisy_image_or_video = noise
+    #     denoising_step_list = self.distillation_model.denoising_step_list
+
+    #     for index, current_timestep in enumerate(denoising_step_list):
+    #         pred_image_or_video = self.distillation_model.generator(
+    #             noisy_image_or_video=noisy_image_or_video,
+    #             conditional_dict=conditional_dict,
+    #             timestep=torch.ones(
+    #                 noise.shape[:2], dtype=torch.long, device=noise.device) * current_timestep
+    #         )  # [B, F, C, H, W]
+    #         if index < len(denoising_step_list) - 1:
+    #             next_timestep = denoising_step_list[index + 1] * torch.ones(
+    #                 noise.shape[:2], dtype=torch.long, device=noise.device)
+
+    #             noisy_image_or_video = self.distillation_model.scheduler.add_noise(
+    #                 pred_image_or_video.flatten(0, 1),
+    #                 torch.randn_like(pred_image_or_video.flatten(0, 1)),
+    #                 next_timestep.flatten(0, 1)
+    #             ).unflatten(0, noise.shape[:2])
+                
+    #     # with torch.autocast("cuda", dtype=dtype):
+    #     self.distillation_model.vae.to(device)
+    #     gpu_memory_usage = torch.cuda.memory_allocated() / 1024**2
+    #     print("GPU memory usage before validation: %s MB",
+    #                 gpu_memory_usage)
+    #     video = self.distillation_model.vae.decode_to_pixel(pred_image_or_video).squeeze(1)
+            
+    #     self.distillation_model.train()
+    #     return video
+
     def train(self):
-        while True:
+        # Initialize progress bar with time prediction
+        pbar = None
+        if self.is_main_process:
+            pbar = tqdm(range(self.config.train_steps), desc="Training Progress", 
+                       unit="step", dynamic_ncols=True)
+            
+        start_time = time.time()
+        validation_steps = 2
+        for step in range(self.config.train_steps):
+            device = torch.cuda.current_device()
+            torch.cuda.reset_peak_memory_stats(device)  
             self.train_one_step()
+            peak_mem = torch.cuda.max_memory_allocated(device) / 1024**2  # MiB
+            print(f"[decode_to_pixel] Peak GPU memory: {peak_mem:.2f} MiB")  
             if (not self.config.no_save) and self.step % self.config.log_iters == 0:
                 self.save()
                 torch.cuda.empty_cache()
@@ -277,9 +347,39 @@ class Trainer:
                     self.previous_time = current_time
                 else:
                     wandb.log({"per iteration time": current_time -
-                              self.previous_time}, step=self.step)
+                            self.previous_time}, step=self.step)
                     self.previous_time = current_time
+                
+                # Update progress bar with time prediction
+                elapsed_time = current_time - start_time
+                if step > 0 and pbar is not None:
+                    avg_time_per_step = elapsed_time / step
+                    remaining_steps = self.config.train_steps - step
+                    estimated_remaining_time = avg_time_per_step * remaining_steps
+                    
+                    # Format time strings
+                    elapsed_str = time.strftime('%H:%M:%S', time.gmtime(elapsed_time))
+                    remaining_str = time.strftime('%H:%M:%S', time.gmtime(estimated_remaining_time))
+                    
+                    # Update progress bar
+                    pbar.set_postfix({
+                        'Elapsed': elapsed_str,
+                        'ETA': remaining_str,
+                        'Step': f'{step}/{self.config.train_steps}'
+                    })
+                
+                # Update progress bar
+                if pbar is not None:
+                    pbar.update(1)
 
+            # if step % validation_steps == 0:
+            #     if self.is_main_process:
+            #         print(f"Validation at step {step}...")
+            #     video = self.validation()
+            #     val_dict = {
+            #         "generator_video": prepare_for_saving(video),
+            #     }
+            #     wandb.log(val_dict, step=step)
             self.step += 1
 
 
@@ -289,12 +389,14 @@ def main():
     parser.add_argument("--local_rank", type=int, default=-1)
     parser.add_argument("--no_save", action="store_true")
     parser.add_argument("--no_visualize", action="store_true")
+    parser.add_argument("--train_steps", type=int, default=6000)
 
     args = parser.parse_args()
 
     config = OmegaConf.load(args.config_path)
     config.no_save = args.no_save
     config.no_visualize = args.no_visualize
+    config.train_steps = args.train_steps
 
     trainer = Trainer(config)
     trainer.train()

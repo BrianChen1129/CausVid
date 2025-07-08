@@ -45,7 +45,6 @@ class BidirectionalInferencePipeline(torch.nn.Module):
 
         # initial point
         noisy_image_or_video = noise
-
         for index, current_timestep in enumerate(self.denoising_step_list):
             pred_image_or_video = self.generator(
                 noisy_image_or_video=noisy_image_or_video,
@@ -53,7 +52,7 @@ class BidirectionalInferencePipeline(torch.nn.Module):
                 timestep=torch.ones(
                     noise.shape[:2], dtype=torch.long, device=noise.device) * current_timestep
             )  # [B, F, C, H, W]
-
+            
             if index < len(self.denoising_step_list) - 1:
                 next_timestep = self.denoising_step_list[index + 1] * torch.ones(
                     noise.shape[:2], dtype=torch.long, device=noise.device)
