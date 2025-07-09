@@ -98,7 +98,7 @@ class Trainer:
             lr=config.lr,
             betas=(config.beta1, config.beta2)
         )
-        from IPython import embed; embed()
+
         self.critic_optimizer = torch.optim.AdamW(
             [param for param in self.distillation_model.fake_score.parameters()
             if param.requires_grad],
