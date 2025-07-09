@@ -21,7 +21,7 @@ real_task_type: bidirectional_video
 fake_task_type: bidirectional_video
 denoising_loss_type: flow
 mixed_precision: true
-seed: 0
+seed: 1024
 wandb_host: https://api.wandb.ai
 wandb_key: "73190d8c0de18a14eb3444e222f9432d247d1e30"
 wandb_entity: yongqich
@@ -38,7 +38,7 @@ negative_prompt: '色调艳丽，过曝，静态，细节模糊不清，字幕�
 dfake_gen_update_ratio: 5
 image_or_video_shape:
 - 1
-- 16
+- 8
 - 16
 - 56
 - 104

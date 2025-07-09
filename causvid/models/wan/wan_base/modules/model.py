@@ -497,8 +497,8 @@ class WanModel(ModelMixin, ConfigMixin):
 
         self.gradient_checkpointing = False
 
-    def _set_gradient_checkpointing(self, module, value=False):
-        self.gradient_checkpointing = value
+    # def _set_gradient_checkpointing(self, enable, module, value=False):
+    #     self.gradient_checkpointing = value
 
     def forward(
         self,

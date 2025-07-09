@@ -281,6 +281,7 @@ class DMD(nn.Module):
         else:
             dmd_loss = 0.5 * F.mse_loss(original_latent.double(
             ), (original_latent.double() - grad.double()).detach(), reduction="mean")
+
         return dmd_loss, dmd_log_dict
 
     def _initialize_inference_pipeline(self):
@@ -380,7 +381,7 @@ class DMD(nn.Module):
             conditional_dict=conditional_dict,
             timestep=timestep
         )
-        from IPython import embed; embed()
+
         gradient_mask = None  # timestep != 0
 
         # pred_image_or_video = noisy_input * \
