@@ -107,6 +107,22 @@ class DMD(nn.Module):
         else:
             self.scheduler.alphas_cumprod = None
 
+        # Initialize generators for reproducible random operations
+        self.seed = getattr(args, "seed")
+        self.noise_generator = torch.Generator(device="cuda").manual_seed(self.seed)
+        self.validation_generator = torch.Generator(device="cpu").manual_seed(42)
+
+    def _reset_generators_for_step(self, step: int):
+        """Reset generators to ensure reproducible random operations for each step."""
+        # Reset the main noise generator with step-specific seed
+        step_seed = self.seed + step
+        self.noise_generator = torch.Generator(device="cuda").manual_seed(step_seed)
+        
+        # Reset validation generator with fixed seed for consistent validation
+        self.validation_generator = torch.Generator(device="cpu").manual_seed(42)
+        
+        print(f"Reset generators for step {step} with seed {step_seed}")
+
     def _process_timestep(self, timestep: torch.Tensor, type: str) -> torch.Tensor:
         """
         Pre-process the randomly generated timestep based on the generator's task type.
@@ -222,12 +238,14 @@ class DMD(nn.Module):
 
         with torch.no_grad():
             # Step 1: Randomly sample timestep based on the given schedule and corresponding noise
+            # Use generator for reproducible timestep generation
             timestep = torch.randint(
                 0,
                 self.num_train_timestep,
                 [batch_size, num_frame],
                 device=self.device,
-                dtype=torch.long
+                dtype=torch.long,
+                generator=self.noise_generator
             )
 
             timestep = self._process_timestep(
@@ -240,7 +258,8 @@ class DMD(nn.Module):
                     (1 + (self.timestep_shift - 1) * (timestep / 1000)) * 1000
             timestep = timestep.clamp(self.min_step, self.max_step)
 
-            noise = torch.randn_like(image_or_video)
+            # Use generator for reproducible noise generation
+            noise = torch.randn(image_or_video.shape, device=image_or_video.device, dtype=image_or_video.dtype, generator=self.noise_generator)
             noisy_latent = self.scheduler.add_noise(
                 image_or_video.flatten(0, 1),
                 noise.flatten(0, 1),
@@ -311,16 +330,18 @@ class DMD(nn.Module):
         """
         # Step 1: Sample noise and backward simulate the generator's input
         if getattr(self.args, "backward_simulation", True):
+            # Use generator for reproducible noise generation
             simulated_noisy_input = self._consistency_backward_simulation(
                 noise=torch.randn(image_or_video_shape,
-                                  device=self.device, dtype=self.dtype),
+                                  device=self.device, dtype=self.dtype, generator=self.noise_generator),
                 conditional_dict=conditional_dict
             )
         else:
             simulated_noisy_input = []
             for timestep in self.denoising_step_list:
+                # Use generator for reproducible noise generation
                 noise = torch.randn(
-                    image_or_video_shape, device=self.device, dtype=self.dtype)
+                    image_or_video_shape, device=self.device, dtype=self.dtype, generator=self.noise_generator)
 
                 noisy_timestep = timestep * torch.ones(
                     image_or_video_shape[:2], device=self.device, dtype=torch.long)
@@ -339,8 +360,9 @@ class DMD(nn.Module):
             simulated_noisy_input = torch.stack(simulated_noisy_input, dim=1)
 
         # Step 2: Randomly sample a timestep and pick the corresponding input
+        # Use generator for reproducible index generation
         index = torch.randint(0, len(self.denoising_step_list), [
-                              image_or_video_shape[0], image_or_video_shape[1]], device=self.device, dtype=torch.long)
+                              image_or_video_shape[0], image_or_video_shape[1]], device=self.device, dtype=torch.long, generator=self.noise_generator)
 
         index = self._process_timestep(index, type=self.generator_task_type)
         
@@ -358,7 +380,7 @@ class DMD(nn.Module):
             conditional_dict=conditional_dict,
             timestep=timestep
         )
-
+        from IPython import embed; embed()
         gradient_mask = None  # timestep != 0
 
         # pred_image_or_video = noisy_input * \
@@ -431,12 +453,14 @@ class DMD(nn.Module):
             )
 
         # Step 2: Compute the fake prediction
+        # Use generator for reproducible timestep generation
         critic_timestep = torch.randint(
             0,
             self.num_train_timestep,
             image_or_video_shape[:2],
             device=self.device,
-            dtype=torch.long
+            dtype=torch.long,
+            generator=self.noise_generator
         )
         critic_timestep = self._process_timestep(
             critic_timestep, type=self.fake_task_type)
@@ -448,7 +472,8 @@ class DMD(nn.Module):
 
         critic_timestep = critic_timestep.clamp(self.min_step, self.max_step)
 
-        critic_noise = torch.randn_like(generated_image)
+        # Use generator for reproducible noise generation
+        critic_noise = torch.randn(generated_image.shape, device=generated_image.device, dtype=generated_image.dtype, generator=self.noise_generator)
 
         noisy_generated_image = self.scheduler.add_noise(
             generated_image.flatten(0, 1),
@@ -498,8 +523,8 @@ class DMD(nn.Module):
             "critictrain_latent": generated_image.detach(),
             "critictrain_noisy_latent": noisy_generated_image.detach(),
             "critictrain_pred_image": pred_fake_image.detach(),
-            "critic_timestep": critic_timestep.detach(),
-            "critic_timestep_stu": timestep_gen.float().detach()    
+            "critic_timestep": critic_timestep.float().detach(),
+            "critic_timestep_stu": timestep_gen.float().detach()
         }
 
         return denoising_loss, critic_log_dict

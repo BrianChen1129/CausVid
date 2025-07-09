@@ -2,8 +2,7 @@
 
 #SBATCH --job-name=dmd_8n
 #SBATCH --partition=main
-#SBATCH --qos=hao
-#SBATCH --nodes=4
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=128
@@ -25,4 +24,4 @@ echo "MASTER_PORT: $MASTER_PORT"
 echo "RDZV_ID: $RDZV_ID"
 
 export WANDB_MODE=online
-srun torchrun --nnodes 4 --nproc_per_node 8 --node_rank=$((SLURM_PROCID)) --rdzv_id $RDZV_ID --rdzv_backend c10d --rdzv_endpoint $MASTER_ADDR:$MASTER_PORT causvid/train_distillation.py --config_path local_scripts/wan_bidirectional_dmd_from_scratch.yaml 
+srun torchrun --nnodes 2 --nproc_per_node 8 --node_rank=$((SLURM_PROCID)) --rdzv_id $RDZV_ID --rdzv_backend c10d --rdzv_endpoint $MASTER_ADDR:$MASTER_PORT causvid/train_distillation.py --config_path local_scripts/wan_bidirectional_dmd_from_scratch.yaml 

@@ -98,7 +98,7 @@ class Trainer:
             lr=config.lr,
             betas=(config.beta1, config.beta2)
         )
-        from IPython import embed; embed()
+
         self.critic_optimizer = torch.optim.AdamW(
             [param for param in self.distillation_model.fake_score.parameters()
             if param.requires_grad],
@@ -150,6 +150,9 @@ class Trainer:
     def train_one_step(self):
         self.distillation_model.eval()  # prevent any randomness (e.g. dropout)
 
+        # Reset generators for reproducible random operations
+        self.distillation_model._reset_generators_for_step(self.step)
+
         TRAIN_GENERATOR = self.step % self.config.dfake_gen_update_ratio == 0
         VISUALIZE = self.step % self.config.log_iters == 0 and not self.config.no_visualize
 
@@ -183,7 +186,14 @@ class Trainer:
                 self.unconditional_dict = unconditional_dict  # cache the unconditional_dict
             else:
                 unconditional_dict = self.unconditional_dict
+                
 
+        clean_latent = clean_latent[:,:image_or_video_shape[1],:,:image_or_video_shape[3],...]
+        clean_latent = torch.full_like(clean_latent, 0.1)
+        conditional_dict['prompt_embeds'] = torch.full_like(conditional_dict['prompt_embeds'], 0.01)
+        unconditional_dict['prompt_embeds'] = torch.full_like(unconditional_dict['prompt_embeds'], -0.01)
+        
+        
         # Step 3: Train the generator
         if TRAIN_GENERATOR:
             generator_loss, generator_log_dict = self.distillation_model.generator_loss(
