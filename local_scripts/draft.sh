@@ -19,4 +19,4 @@ export WANDB_MODE=offline
 torchrun --nnodes 1 --nproc_per_node=1 --master-port 29501 causvid/train_distillation.py \
     --config_path  local_scripts/wan_bidirectional_dmd_from_scratch_debug.yaml 
 
-python minimal_inference/bidirectional_inference.py --config_path configs/wan_bidirectional_dmd_from_scratch.yaml --checkpoint_folder /mnt/sharefs/users/hao.zhang/DMD/wan_bidirectional_dmd_from_scratch/2025-06-20-08-17-06.607828_seed1024/checkpoint_model_004800  --output_folder outputs_video_dmd_0step_debug   --prompt_file_path prompts.txt 
+python minimal_inference/bidirectional_inference.py --config_path configs/wan_bidirectional_dmd_from_scratch.yaml --checkpoint_folder /mnt/sharefs/users/hao.zhang/DMD/wan_bidirectional_dmd_from_scratch/2025-06-20-08-17-06.607828_seed1024/checkpoint_model_004800  --output_folder outputs_video_dmd_64   --prompt_file_path prompts.txt 

@@ -21,7 +21,7 @@ real_task_type: bidirectional_video
 fake_task_type: bidirectional_video
 denoising_loss_type: flow
 mixed_precision: true
-seed: 1024
+seed: 1000
 wandb_host: https://api.wandb.ai
 wandb_key: ""
 wandb_entity: yongqich

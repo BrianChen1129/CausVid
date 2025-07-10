@@ -189,7 +189,7 @@ class Trainer:
                 
 
         clean_latent = clean_latent[:,:image_or_video_shape[1],:,:image_or_video_shape[3],...]
-        clean_latent = torch.full_like(clean_latent, 0.1)
+        clean_latent = torch.full_like(clean_latent, 0.2)
         conditional_dict['prompt_embeds'] = torch.full_like(conditional_dict['prompt_embeds'], 0.01)
         unconditional_dict['prompt_embeds'] = torch.full_like(unconditional_dict['prompt_embeds'], -0.01)
         

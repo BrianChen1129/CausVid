@@ -541,7 +541,20 @@ class WanModel(ModelMixin, ConfigMixin):
             x = [torch.cat([u, v], dim=0) for u, v in zip(x, y)]
 
         # embeddings
+
+        # x = x.to(torch.float32)
+        # self.patch_embedding = self.patch_embedding.to(torch.float32)
+        # self.patch_embedding.bias = self.patch_embedding.bias.to(torch.float32)
+        # self.patch_embedding.weight = self.patch_embedding.weight.to(torch.float32)
+        from IPython import embed; embed()
+        # c = x.shape[2]
+        # half_c = c // 2  # 8 -> 4
+        # first_half = torch.full_like(x[:, :, :half_c], 0.1)
+        # second_half = x[:, :, half_c:]
+        # new_x = torch.cat([first_half, second_half], dim=2)
+        # self.patch_embedding(x)
         x = [self.patch_embedding(u.unsqueeze(0)) for u in x]
+
         grid_sizes = torch.stack(
             [torch.tensor(u.shape[2:], dtype=torch.long) for u in x])
         x = [u.flatten(2).transpose(1, 2) for u in x]
@@ -585,7 +598,7 @@ class WanModel(ModelMixin, ConfigMixin):
             def custom_forward(*inputs, **kwargs):
                 return module(*inputs, **kwargs)
             return custom_forward
-
+        from IPython import embed; embed()
         for block in self.blocks:
             if torch.is_grad_enabled() and self.gradient_checkpointing:
                 x = torch.utils.checkpoint.checkpoint(
